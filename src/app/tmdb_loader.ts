@@ -83,10 +83,15 @@ const loadMovies = async (ids: number[]) => {
       unchanged: existing.length - toUpdate.length,
     });
 
-    const mutatedIds = [...toCreate.map(o => o.id), ...toUpdate.map(o => o.id)];
-    return remoteValid
-      .filter(o => mutatedIds.includes(o.id))
-      .filter(o => !updateErrorsById[o.id]);
+    const createdById = keyBy(toCreate, toId);
+    const updatedById = keyBy(
+      toUpdate.filter(o => !updateErrorsById[o.id]),
+      toId,
+    );
+    return {
+      created: remoteValid.filter(o => createdById[o.id]),
+      updated: remoteValid.filter(o => updatedById[o.id]),
+    };
   } catch (e) {
     logger.error('error while saving', e);
   }
@@ -216,7 +221,15 @@ const loadShows = async (ids: number[]) => {
       OPTIONS,
     );
 
-    return mutated;
+    const createdById = keyBy(toCreate, toId);
+    const updatedById = keyBy(
+      toUpdate.filter(o => !updateErrorsById[o.id]),
+      toId,
+    );
+    return {
+      created: remoteValid.filter(o => createdById[o.id]),
+      updated: remoteValid.filter(o => updatedById[o.id]),
+    };
   } catch (e) {
     logger.error('error while saving', e);
   }
@@ -242,18 +255,21 @@ const updateMediaByType = async (
     try {
       logger.info(`processing chunk ${i + 1}/${chunks.length}`);
 
-      const loadedMedias =
+      const result =
         media === 'movie' ? await loadMovies(ids) : await loadShows(ids);
-      if (!loadedMedias || loadedMedias.length === 0) return;
+      const createdMedias = result?.created || [];
+      const updatedMedias = result?.updated || [];
+      const mutatedMedias = [...createdMedias, ...updatedMedias];
+      if (mutatedMedias.length === 0) return;
 
       const personIds = creditsToValidPersonIds(
-        loadedMedias,
+        createdMedias,
         personIdsProcessedLocal,
       );
       const loadedPersonIds = await loadPersons(personIds);
       if (!loadedPersonIds || loadedPersonIds.length === 0) return;
 
-      await updateRelationships(loadedMedias);
+      await updateRelationships(mutatedMedias);
 
       personIdsProcessedLocal = personIdsProcessedLocal.concat(
         loadedPersonIds || [],
